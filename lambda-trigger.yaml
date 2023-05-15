@@ -1,0 +1,118 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Lambda for tag invoices.
+
+Parameters:
+  ArchitechtureName:
+    Description: Name of the base stack with all infra resources
+    Type: String
+    Default: role-creation
+
+  Prefix:
+    NoEcho: 'true'
+    Type: String
+    Description: Namespace prefix
+    MinLength: '1'
+    MaxLength: '41'
+    Default: 's'
+  
+Resources:
+
+  FunctionCubicLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Environment: 
+          Variables: 
+            bucket: 
+              Fn::ImportValue:
+                Fn::Sub: "${ArchitechtureName}-S3CubicTextractBucket"
+            snsTopicArn: 
+              Fn::ImportValue:
+                Fn::Sub: "${ArchitechtureName}-SNSCubicTextractTopic"
+            sqsQueueUrl:
+              Fn::ImportValue:
+                Fn::Sub: "${ArchitechtureName}-SQSCubicTextractQueue" 
+            roleArn: 
+              Fn::ImportValue:
+                Fn::Sub: "${ArchitechtureName}-LambdaCubicRole"
+            region: 
+              Fn::ImportValue:
+                Fn::Sub: "${ArchitechtureName}-TopicRegion"              
+
+      PackageType: Image
+      Role: 
+        Fn::ImportValue:
+          Fn::Sub: "${ArchitechtureName}-LambdaCubicRole"    
+      Code:
+        ImageUri:
+          !Join [ ":", [{ "Fn::ImportValue" : {"Fn::Sub": "${ArchitechtureName}-ECRCubicRepo" } }, "latest" ] ]
+
+      Timeout: 899
+      MemorySize: 10240
+
+  ErrorQueue: 
+    Type: AWS::SQS::Queue
+    Properties: 
+      QueueName: !Join [ "_", [ !Ref Prefix, "ErrorQueue" ] ]
+
+  ResultsLambdaQueue: 
+    Type: AWS::SQS::Queue
+    Properties: 
+      QueueName: !Join [ "_", [ !Ref Prefix, "ResultsLambdacucbicQueue" ] ]
+
+  SQSResultsLambdaQueuePolicy:
+    Type: "AWS::SQS::QueuePolicy"
+    Properties:
+      PolicyDocument:
+        Id: ResultsSQSPolicy
+        Version: '2012-10-17'
+        Statement:
+          - Sid: __owner_statement
+            Effect: Allow
+            Principal: 
+              AWS: "*"
+            Action:
+              - SQS:*
+            Resource: !GetAtt ResultsLambdaQueue.Arn
+      Queues:
+        - !Ref ResultsLambdaQueue
+
+  TriggerLambdaTopic: 
+    Type: AWS::SNS::Topic
+    Properties: 
+      TopicName: !Join [ "_", [ !Ref Prefix, "TriggerTopicLambdaCubic" ] ] 
+
+  InputTrigger:
+    Type: 'AWS::SNS::Subscription'
+    Properties:
+      TopicArn: !Ref TriggerLambdaTopic 
+      Protocol: lambda
+      Endpoint: !GetAtt FunctionCubicLambda.Arn
+
+  AsyncConfig:
+    Type: AWS::Lambda::EventInvokeConfig
+    Properties:
+      Qualifier: "$LATEST"
+      DestinationConfig:
+          OnFailure:
+            Destination: !GetAtt ErrorQueue.Arn
+          OnSuccess:
+            Destination: !GetAtt ResultsLambdaQueue.Arn
+      FunctionName: !Ref FunctionCubicLambda
+      MaximumEventAgeInSeconds: 899
+
+  LambdaInvokePermission: 
+    Type: AWS::Lambda::Permission
+    Properties: 
+      Action: lambda:InvokeFunction
+      Principal: sns.amazonaws.com
+      SourceArn:  !Ref TriggerLambdaTopic
+      FunctionName: !Ref FunctionCubicLambda
+
+  # LambdaDestinationPermission: 
+  #   Type: AWS::Lambda::Permission
+  #   Properties: 
+  #     Action: sqs:SendMessage
+  #     Principal:
+  #       Fn::ImportValue:
+  #         Fn::Sub: "${ArchitechtureName}-LambdaCubicRole"  
+  #     FunctionName: !Ref FunctionCubicLambda

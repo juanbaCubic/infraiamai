@@ -1,0 +1,168 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  Generate infrastructure Cubic
+
+Parameters:
+  Prefix:
+    NoEcho: 'true'
+    Type: String
+    Description: Namespace prefix
+    MinLength: '1'
+    MaxLength: '41'
+    Default: 's'
+  
+  TopicRegion:
+    Type: String
+    Default: eu-west-1
+
+Resources:
+
+  SQSCubicTextractQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Join [ "_", [ "AmazonTextractSQSCubicQueue", !Ref Prefix ] ]
+
+  SNSCubicTextractTopic: 
+    Type: AWS::SNS::Topic
+    Properties: 
+      TopicName: !Join [ "_", [ "AmazonTextractSNSCubicTopic", !Ref Prefix ] ]
+
+  SNSSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref SNSCubicTextractTopic
+      Endpoint: !GetAtt SQSCubicTextractQueue.Arn
+      Protocol: sqs
+      Region: !Ref TopicRegion
+
+  SQSCubicTextractQueuePolicy:
+    Type: "AWS::SQS::QueuePolicy"
+    Properties:
+      PolicyDocument:
+        Id: MyDemoQueuePolicy
+        Version: '2012-10-17'
+        Statement:
+          - Sid: Allow-SNS-SendMessage
+            Effect: Allow
+            Principal: 
+              AWS: "*"
+            Action:
+              - SQS:*
+            Resource: !GetAtt SQSCubicTextractQueue.Arn
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !Ref SNSCubicTextractTopic
+      Queues:
+        - !Ref SQSCubicTextractQueue
+
+  S3CubicTextractBucket:
+    Type: 'AWS::S3::Bucket'
+    DeletionPolicy: Delete
+    Properties:
+      BucketName: !Join [ "-", [ !Ref Prefix, "s3cubictextractbucket" ] ]
+      LifecycleConfiguration:
+        Rules:
+          - Id: GlacierRule
+            Prefix: glacier
+            Status: Enabled
+            ExpirationInDays: 10
+            Transitions:
+              - TransitionInDays: 1
+                StorageClass: GLACIER
+  
+  RoleManagedPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowPassRole
+            Effect: Allow
+            Action:
+              - iam:PassRole
+            Resource: "*"
+
+  LambdaCubicRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      Path: '/'
+      RoleName: !Join [ "_", [ !Ref Prefix, "LambdaCubicRole" ] ]
+      ManagedPolicyArns:
+        -  'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+        -  'arn:aws:iam::aws:policy/AmazonTextractFullAccess'
+        -  'arn:aws:iam::aws:policy/service-role/AmazonTextractServiceRole'
+        -  'arn:aws:iam::aws:policy/service-role/AWSLambdaSQSQueueExecutionRole'
+        -  'arn:aws:iam::aws:policy/service-role/AmazonS3ObjectLambdaExecutionRolePolicy'
+        -  'arn:aws:iam::aws:policy/AmazonSQSFullAccess'
+        -  'arn:aws:iam::aws:policy/AmazonSNSFullAccess'
+        -  'arn:aws:iam::aws:policy/AmazonS3FullAccess'
+        -   !Ref RoleManagedPolicy
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: 
+                - 'textract.amazonaws.com'
+                - 'lambda.amazonaws.com'
+            Action:
+              - 'sts:AssumeRole'        
+
+  ECRCubicRepository: 
+    Type: AWS::ECR::Repository
+    Properties: 
+      RepositoryName: !Join [ "_", [ !Ref Prefix, "ecr-cubic-repository" ] ]
+      ImageScanningConfiguration: 
+        ScanOnPush: "true"
+
+Outputs:
+  SQSCubicTextractQueueID:
+    Description: The SQS url to textract
+    Value: !Ref SQSCubicTextractQueue
+    Export:
+      Name:
+        'Fn::Sub': '${AWS::StackName}-SQSCubicTextractQueue'
+
+  SNSCubicTextractTopicID:
+    Description: The Arn of SNS to textract
+    Value: !Ref SNSCubicTextractTopic
+    Export:
+      Name:
+        'Fn::Sub': '${AWS::StackName}-SNSCubicTextractTopic'
+
+  S3CubicTextractBucketID:
+    Description: The arn of S3
+    Value: !Ref S3CubicTextractBucket 
+    Export:
+      Name:
+        'Fn::Sub': '${AWS::StackName}-S3CubicTextractBucket'
+
+  LambdaCubicRoleID:
+    Description: The arn of the role
+    Value:
+      'Fn::GetAtt':
+        - LambdaCubicRole
+        - Arn
+    Export:
+      Name:
+        'Fn::Sub': '${AWS::StackName}-LambdaCubicRole'
+
+  ECRCubicRepoID:
+    Description: The arn of the Lambda ImageUri
+    Value:
+      'Fn::GetAtt':
+        - ECRCubicRepository
+        - RepositoryUri
+    Export:
+      Name:
+        'Fn::Sub': '${AWS::StackName}-ECRCubicRepo'
+
+  Region:
+    Description: The region 
+    Value: !Ref TopicRegion
+    Export:
+      Name:
+        'Fn::Sub': '${AWS::StackName}-TopicRegion'
+    
+
+  

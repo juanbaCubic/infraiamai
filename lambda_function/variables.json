@@ -1,0 +1,14 @@
+{
+    "bucket": " ",
+    "snsTopicArn": " ",
+    "sqsQueueUrl": " ",
+    "roleArn": " ",
+    "region": "eu-west-1",
+    "MODEL_FILENAME": "saved_model.pb",
+    "MODEL_VAR1": "variables.data-00000-of-00001",
+    "MODEL_VAR2": "variables.index",
+    "MODEL_GRAPH_DEF_PATH": "uploads/model/",
+    "dict_path": "data/dict/exp6_11k_V2",
+    "dict_vocab": "data/dict/vocab.txt",
+    "model_json_config": "data/model_conf_v2.json"
+}
